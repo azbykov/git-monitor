@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { graphql } from "@octokit/graphql";
 import { cacheLife, cacheTag } from "next/cache";
 import { CACHE_TAGS } from "./cache-tags";
-import { rethrowAuth, tokenFrom, type Sealed } from "./session";
+import { isGithubUnauthorized, tokenFrom, type Sealed } from "./session";
 
 export const ORG_COOKIE = "org";
 /** Значение cookie для явного выбора «Все организации» */
@@ -35,19 +35,31 @@ type Response = {
  */
 export async function listMyOrgs(sealed: Sealed): Promise<Org[]> {
   "use cache: remote";
-  const { token, login } = await tokenFrom(sealed);
-  cacheLife("days");
+  const auth = await tokenFrom(sealed);
+  if (!auth) {
+    cacheLife("seconds");
+    return [];
+  }
+  const { token, login } = auth;
   cacheTag(CACHE_TAGS.orgs(login));
 
   const gql = graphql.defaults({ headers: { authorization: `token ${token}` } });
-  const res = await gql<Response>(/* GraphQL */ `
-    query MyOrgs {
-      viewer { organizations(first: 50) { nodes { login avatarUrl } } }
-      search(query: "is:pr author:@me sort:updated-desc", type: ISSUE, first: 100) {
-        nodes { ... on PullRequest { repository { owner { __typename login avatarUrl } } } }
+  let res: Response;
+  try {
+    res = await gql<Response>(/* GraphQL */ `
+      query MyOrgs {
+        viewer { organizations(first: 50) { nodes { login avatarUrl } } }
+        search(query: "is:pr author:@me sort:updated-desc", type: ISSUE, first: 100) {
+          nodes { ... on PullRequest { repository { owner { __typename login avatarUrl } } } }
+        }
       }
-    }
-  `).catch(rethrowAuth);
+    `);
+  } catch (e) {
+    if (!isGithubUnauthorized(e)) throw e;
+    cacheLife("seconds");
+    return []; // страница сама покажет «войти заново»
+  }
+  cacheLife("days");
 
   const orgs = new Map<string, Org>();
   for (const o of res.viewer.organizations.nodes) orgs.set(o.login, { login: o.login, avatarUrl: o.avatarUrl });

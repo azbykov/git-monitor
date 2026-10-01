@@ -19,6 +19,7 @@ export async function refreshGithubAction() {
   const { user } = await requireSession();
   updateTag(CACHE_TAGS.openPrs(user.login));
   updateTag(CACHE_TAGS.history(user.login));
+  updateTag(CACHE_TAGS.orgs(user.login)); // например, после выдачи приложению доступа к организации
 }
 
 export async function loginAction() {

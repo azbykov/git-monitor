@@ -1,10 +1,13 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { loginAction } from "@/app/actions";
+import { devGithubToken } from "@/lib/dev-auth";
 
 export const metadata: Metadata = { title: "Вход · Git Monitor" };
 
 export default function LoginPage({ searchParams }: PageProps<"/login">) {
+  if (devGithubToken()) redirect("/"); // next dev + DEV_GITHUB_TOKEN: входить не нужно
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-16">
       <h1 className="text-2xl font-semibold">Git Monitor</h1>

@@ -1,8 +1,8 @@
 import "server-only";
 import { graphql } from "@octokit/graphql";
 import { cacheLife, cacheTag } from "next/cache";
-import { CACHE_TAGS, type Fetched } from "./cache-tags";
-import { rethrowAuth, tokenFrom, type Sealed } from "./session";
+import { CACHE_TAGS, unauthorized, type Fetched } from "./cache-tags";
+import { isGithubUnauthorized, tokenFrom, type Sealed } from "./session";
 
 export type HistoricalPr = {
   repo: string;
@@ -67,10 +67,13 @@ const QUERY = /* GraphQL */ `
 /** Мои PR, созданные за последние `days` дней (не больше 300; страницы по 30 — крупнее GitHub отвечает 502). */
 export async function getMyPrHistory(sealed: Sealed, org: string | null, days = 90): Promise<Fetched<HistoricalPr>> {
   "use cache: remote";
-  const { token, login } = await tokenFrom(sealed);
-  cacheLife("hours");
+  const auth = await tokenFrom(sealed);
+  if (!auth) {
+    cacheLife("seconds");
+    return unauthorized();
+  }
+  const { token, login } = auth;
   cacheTag(CACHE_TAGS.history(login));
-
 
   const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
   const q = ["is:pr", "author:@me", `created:>=${since}`, org && `org:${org}`].filter(Boolean).join(" ");
@@ -79,13 +82,20 @@ export async function getMyPrHistory(sealed: Sealed, org: string | null, days = 
   const nodes: Node[] = [];
   let me = "";
   let after: string | null = null;
-  for (let page = 0; page < 10; page++) {
-    const res: Response = await gql<Response>(QUERY, { q, after }).catch(rethrowAuth);
-    me = res.viewer.login;
-    nodes.push(...res.search.nodes);
-    if (!res.search.pageInfo.hasNextPage) break;
-    after = res.search.pageInfo.endCursor;
+  try {
+    for (let page = 0; page < 10; page++) {
+      const res: Response = await gql<Response>(QUERY, { q, after });
+      me = res.viewer.login;
+      nodes.push(...res.search.nodes);
+      if (!res.search.pageInfo.hasNextPage) break;
+      after = res.search.pageInfo.endCursor;
+    }
+  } catch (e) {
+    if (!isGithubUnauthorized(e)) throw e;
+    cacheLife("seconds");
+    return unauthorized();
   }
+  cacheLife("hours");
 
   const items = nodes.map((n) => {
     const readyAt = n.timelineItems.nodes[0]?.createdAt ?? n.createdAt;

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { getMyOpenPullRequests, type PullRequest } from "@/lib/github";
 import { getMyPrHistory, type HistoricalPr } from "@/lib/history";
+import type { Fetched } from "@/lib/cache-tags";
 import { byRepo, bySize, reviewers, summary, weekly } from "@/lib/analytics";
 import { bucketOf, staleReview, type Bucket } from "@/lib/attention";
 import { formatHours, reviewSlaHours } from "@/lib/time";
@@ -44,16 +45,17 @@ async function Analytics() {
   const { sealed } = await requireSession();
   const org = await getSelectedOrg();
 
-  let history: HistoricalPr[];
-  let open: PullRequest[];
-  let fetchedAt: string;
+  let loaded: [Fetched<HistoricalPr>, Fetched<PullRequest>] | { error: unknown };
   try {
-    const [h, o] = await Promise.all([getMyPrHistory(sealed, org, DAYS), getMyOpenPullRequests(sealed, org)]);
-    [history, open] = [h.items, o.items];
-    fetchedAt = h.fetchedAt < o.fetchedAt ? h.fetchedAt : o.fetchedAt; // показываем самые старые данные
-  } catch (e) {
-    return <GithubError error={e} />;
+    loaded = await Promise.all([getMyPrHistory(sealed, org, DAYS), getMyOpenPullRequests(sealed, org)]);
+  } catch (error) {
+    loaded = { error };
   }
+  if ("error" in loaded) return <GithubError error={loaded.error} />;
+  const [h, o] = loaded;
+  if (h.unauthorized || o.unauthorized) return <GithubError unauthorized />;
+  const [history, open] = [h.items, o.items];
+  const fetchedAt = h.fetchedAt < o.fetchedAt ? h.fetchedAt : o.fetchedAt; // показываем самые старые данные
 
   const s = summary(history);
   const stale = open.filter((pr) => staleReview(pr)).length;

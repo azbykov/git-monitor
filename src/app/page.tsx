@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { getMyOpenPullRequests, type PullRequest } from "@/lib/github";
+import type { Fetched } from "@/lib/cache-tags";
 import { BUCKETS, PROBLEMS, bucketOf, problemsOf, type Bucket, type Problem } from "@/lib/attention";
 import { PrCard } from "@/components/pr-card";
 import { AutoRefresh } from "@/components/auto-refresh";
@@ -28,18 +29,20 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/">, "searchParams">)
     <p className="mb-6 text-sm text-zinc-500">Мои открытые PR {org ? `в ${org}` : "во всех организациях"}</p>
   );
 
-  let prs: PullRequest[];
-  let fetchedAt: string;
+  let loaded: Fetched<PullRequest> | { error: unknown };
   try {
-    ({ items: prs, fetchedAt } = await getMyOpenPullRequests(sealed, org));
-  } catch (e) {
+    loaded = await getMyOpenPullRequests(sealed, org);
+  } catch (error) {
+    loaded = { error };
+  }
+  if ("error" in loaded || loaded.unauthorized)
     return (
       <>
         {subtitle}
-        <GithubError error={e} />
+        {"error" in loaded ? <GithubError error={loaded.error} /> : <GithubError unauthorized />}
       </>
     );
-  }
+  const { items: prs, fetchedAt } = loaded;
 
   if (prs.length === 0)
     return (

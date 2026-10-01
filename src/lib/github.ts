@@ -1,8 +1,8 @@
 import "server-only";
 import { graphql } from "@octokit/graphql";
 import { cacheLife, cacheTag } from "next/cache";
-import { CACHE_TAGS, type Fetched } from "./cache-tags";
-import { rethrowAuth, tokenFrom, type Sealed } from "./session";
+import { CACHE_TAGS, unauthorized, type Fetched } from "./cache-tags";
+import { isGithubUnauthorized, tokenFrom, type Sealed } from "./session";
 
 export type FailedCheck = { name: string; url: string | null };
 
@@ -176,17 +176,29 @@ function mapChecks(node: PrNode): PullRequest["checks"] {
 /** Мои открытые PR; `org` = null — по всем организациям. */
 export async function getMyOpenPullRequests(sealed: Sealed, org: string | null): Promise<Fetched<PullRequest>> {
   "use cache: remote";
-  const { token, login } = await tokenFrom(sealed);
-  cacheLife("minutes");
+  const auth = await tokenFrom(sealed);
+  if (!auth) {
+    cacheLife("seconds");
+    return unauthorized();
+  }
+  const { token, login } = auth;
   cacheTag(CACHE_TAGS.openPrs(login));
-
 
   const q = ["is:pr", "is:open", "author:@me", "archived:false", org && `org:${org}`, "sort:updated-desc"]
     .filter(Boolean)
     .join(" ");
 
   const gql = graphql.defaults({ headers: { authorization: `token ${token}` } });
-  const { viewer, search } = await gql<Response>(QUERY, { q }).catch(rethrowAuth);
+  let data: Response;
+  try {
+    data = await gql<Response>(QUERY, { q });
+  } catch (e) {
+    if (!isGithubUnauthorized(e)) throw e; // прочие ошибки не кэшируются
+    cacheLife("seconds");
+    return unauthorized();
+  }
+  cacheLife("minutes");
+  const { viewer, search } = data;
   const me = viewer.login;
 
   const items = search.nodes.map((n) => {
