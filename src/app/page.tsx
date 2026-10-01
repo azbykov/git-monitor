@@ -1,69 +1,115 @@
-import Image from "next/image";
+import { Suspense } from "react";
+import Link from "next/link";
+import { getMyOpenPullRequests, type PullRequest } from "@/lib/github";
+import { BUCKETS, PROBLEMS, bucketOf, problemsOf, type Bucket, type Problem } from "@/lib/attention";
+import { PrCard } from "@/components/pr-card";
+import { AutoRefresh } from "@/components/auto-refresh";
+import { getSelectedOrg } from "@/lib/org";
+import { requireSession } from "@/lib/session";
+import { GithubError } from "@/components/github-error";
 
-export default function Home() {
+export default function Page({ searchParams }: PageProps<"/">) {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8">
+      <h1 className="text-2xl font-semibold">Мои PR</h1>
+      <Suspense fallback={<p className="mt-6 text-zinc-500">Загружаю PR из GitHub…</p>}>
+        <Dashboard searchParams={searchParams} />
+      </Suspense>
+    </main>
+  );
+}
+
+async function Dashboard({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
+  const { filter } = await searchParams;
+  const active = typeof filter === "string" && filter in PROBLEMS ? (filter as Problem) : null;
+  const { sealed } = await requireSession();
+  const org = await getSelectedOrg();
+  const subtitle = (
+    <p className="mb-6 text-sm text-zinc-500">Мои открытые PR {org ? `в ${org}` : "во всех организациях"}</p>
+  );
+
+  let prs: PullRequest[];
+  let fetchedAt: string;
+  try {
+    ({ items: prs, fetchedAt } = await getMyOpenPullRequests(sealed, org));
+  } catch (e) {
+    return (
+      <>
+        {subtitle}
+        <GithubError error={e} />
+      </>
+    );
+  }
+
+  if (prs.length === 0)
+    return (
+      <>
+        {subtitle}
+        <p className="text-zinc-500">Открытых PR нет 🎉</p>
+      </>
+    );
+
+  const counts = Object.fromEntries(
+    (Object.keys(PROBLEMS) as Problem[]).map((p) => [p, prs.filter((pr) => problemsOf(pr).includes(p)).length]),
+  ) as Record<Problem, number>;
+
+  const visible = active ? prs.filter((pr) => problemsOf(pr).includes(active)) : prs;
+  const buckets = Map.groupBy(visible, bucketOf);
+
+  return (
+    <>
+      {subtitle}
+      <nav className="mb-8 flex flex-wrap items-center gap-2 text-sm">
+        <FilterChip href="/" label="Все" count={prs.length} selected={!active} />
+        {(Object.keys(PROBLEMS) as Problem[]).map((p) => (
+          <FilterChip
+            key={p}
+            href={`/?filter=${p}`}
+            label={PROBLEMS[p]}
+            count={counts[p]}
+            selected={active === p}
+            alert={counts[p] > 0}
+          />
+        ))}
+        <div className="ml-auto">
+          <AutoRefresh fetchedAt={fetchedAt} />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </nav>
+
+      <div className="space-y-10">
+        {(Object.keys(BUCKETS) as Bucket[]).map((b) => {
+          const items = buckets.get(b);
+          if (!items?.length) return null;
+          return (
+            <section key={b}>
+              <h2 className="mb-3 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+                {BUCKETS[b]} <span className="font-normal text-zinc-400">{items.length}</span>
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {items.map((pr) => (
+                  <PrCard key={pr.id} pr={pr} />
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function FilterChip(props: { href: string; label: string; count: number; selected: boolean; alert?: boolean }) {
+  return (
+    <Link
+      href={props.href}
+      className={`rounded-full border px-3 py-1 ${
+        props.selected
+          ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+          : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+      }`}
+    >
+      {props.label}{" "}
+      <span className={props.alert && !props.selected ? "font-semibold text-red-600" : "opacity-60"}>{props.count}</span>
+    </Link>
   );
 }

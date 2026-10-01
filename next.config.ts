@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Включает директиву "use cache" — ею кэшируются запросы к GitHub (src/lib/cache-tags.ts)
+  cacheComponents: true,
 };
 
 export default nextConfig;
