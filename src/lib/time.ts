@@ -22,7 +22,7 @@ export function reviewSlaHours(): number {
 /** «5 ч», «2,5 дн» */
 export function formatHours(h: number): string {
   if (h < 24) return `${Math.max(1, Math.round(h))} ч`;
-  const days = Math.round((h / 24) * 10) / 10;
+  const days = h / 24 >= 10 ? Math.round(h / 24) : Math.round((h / 24) * 10) / 10; // 2,5 дн, но 194 дн
   return `${days.toLocaleString("ru")} дн`;
 }
 

@@ -2,6 +2,7 @@ import "server-only";
 import { graphql } from "@octokit/graphql";
 import { cacheLife, cacheTag } from "next/cache";
 import { CACHE_TAGS, unauthorized, type Fetched } from "./cache-tags";
+import { isAutomatedPr } from "./automation";
 import { isGithubUnauthorized, tokenFrom, type Sealed } from "./session";
 
 export type FailedCheck = { name: string; url: string | null };
@@ -21,7 +22,10 @@ export type PullRequest = {
   url: string;
   repo: string; // owner/name
   isDraft: boolean;
+  createdAt: string;
   updatedAt: string;
+  /** PR от бота зависимостей (Snyk, Dependabot, Renovate) */
+  automated: boolean;
   baseRef: string;
   headRef: string;
   additions: number;
@@ -218,7 +222,9 @@ export async function getMyOpenPullRequests(sealed: Sealed, org: string | null):
       url: n.url,
       repo: n.repository.nameWithOwner,
       isDraft: n.isDraft,
+      createdAt: n.createdAt,
       updatedAt: n.updatedAt,
+      automated: isAutomatedPr({ title: n.title, headRef: n.headRefName }),
       baseRef: n.baseRefName,
       headRef: n.headRefName,
       additions: n.additions,

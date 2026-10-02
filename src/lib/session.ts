@@ -22,7 +22,12 @@ const COOKIE = "authjs.session-token";
 
 function secret() {
   const s = process.env.AUTH_SECRET;
-  if (!s) throw new Error("AUTH_SECRET не задан");
+  if (!s)
+    throw new Error(
+      process.env.NODE_ENV === "development"
+        ? "AUTH_SECRET не задан. Для локальной разработки без входа задайте DEV_GITHUB_TOKEN в .env.local"
+        : "AUTH_SECRET не задан",
+    );
   return s;
 }
 

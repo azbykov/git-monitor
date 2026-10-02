@@ -20,6 +20,7 @@ export async function refreshGithubAction() {
   updateTag(CACHE_TAGS.openPrs(user.login));
   updateTag(CACHE_TAGS.history(user.login));
   updateTag(CACHE_TAGS.orgs(user.login)); // например, после выдачи приложению доступа к организации
+  updateTag(CACHE_TAGS.reviews(user.login));
 }
 
 export async function loginAction() {

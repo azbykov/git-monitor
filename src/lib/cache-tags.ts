@@ -16,4 +16,5 @@ export const CACHE_TAGS = {
   openPrs: (login: string) => `github:open-prs:${login}`, // cacheLife("minutes"): 1 мин свежие, потом отдаём старое и обновляем в фоне
   history: (login: string) => `github:history:${login}`, // cacheLife("hours")
   orgs: (login: string) => `github:orgs:${login}`, // cacheLife("days")
+  reviews: (login: string) => `github:reviews:${login}`, // cacheLife("minutes") — PR, где ждут моего ревью
 };

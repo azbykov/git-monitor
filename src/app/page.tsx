@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { getMyOpenPullRequests, type PullRequest } from "@/lib/github";
 import type { Fetched } from "@/lib/cache-tags";
-import { BUCKETS, PROBLEMS, bucketOf, problemsOf, type Bucket, type Problem } from "@/lib/attention";
+import { BUCKETS, PROBLEMS, QUIET_BUCKETS, bucketOf, problemsOf, type Bucket, type Problem } from "@/lib/attention";
 import { PrCard } from "@/components/pr-card";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { getSelectedOrg } from "@/lib/org";
@@ -52,18 +52,20 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/">, "searchParams">)
       </>
     );
 
+  // Боты и заброшенные PR — отдельно и в счётчики проблем не входят, иначе они забивают список
+  const live = prs.filter((pr) => !QUIET_BUCKETS.has(bucketOf(pr)));
   const counts = Object.fromEntries(
-    (Object.keys(PROBLEMS) as Problem[]).map((p) => [p, prs.filter((pr) => problemsOf(pr).includes(p)).length]),
+    (Object.keys(PROBLEMS) as Problem[]).map((p) => [p, live.filter((pr) => problemsOf(pr).includes(p)).length]),
   ) as Record<Problem, number>;
 
-  const visible = active ? prs.filter((pr) => problemsOf(pr).includes(active)) : prs;
+  const visible = active ? live.filter((pr) => problemsOf(pr).includes(active)) : prs;
   const buckets = Map.groupBy(visible, bucketOf);
 
   return (
     <>
       {subtitle}
       <nav className="mb-8 flex flex-wrap items-center gap-2 text-sm">
-        <FilterChip href="/" label="Все" count={prs.length} selected={!active} />
+        <FilterChip href="/" label="Все" count={live.length} selected={!active} />
         {(Object.keys(PROBLEMS) as Problem[]).map((p) => (
           <FilterChip
             key={p}
@@ -83,16 +85,30 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/">, "searchParams">)
         {(Object.keys(BUCKETS) as Bucket[]).map((b) => {
           const items = buckets.get(b);
           if (!items?.length) return null;
-          return (
+          const grid = (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {items.map((pr) => (
+                <PrCard key={pr.id} pr={pr} />
+              ))}
+            </div>
+          );
+          const heading = (
+            <>
+              {BUCKETS[b]} <span className="font-normal text-zinc-400">{items.length}</span>
+            </>
+          );
+          // Шумные секции свёрнуты по умолчанию
+          return QUIET_BUCKETS.has(b) ? (
+            <details key={b} className="group">
+              <summary className="mb-3 cursor-pointer text-sm font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
+                {heading}
+              </summary>
+              {grid}
+            </details>
+          ) : (
             <section key={b}>
-              <h2 className="mb-3 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
-                {BUCKETS[b]} <span className="font-normal text-zinc-400">{items.length}</span>
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {items.map((pr) => (
-                  <PrCard key={pr.id} pr={pr} />
-                ))}
-              </div>
+              <h2 className="mb-3 text-sm font-semibold text-zinc-600 dark:text-zinc-400">{heading}</h2>
+              {grid}
             </section>
           );
         })}

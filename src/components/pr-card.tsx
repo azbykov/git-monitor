@@ -1,5 +1,6 @@
 import type { PullRequest } from "@/lib/github";
-import { problemsOf, staleReview, waitingReason } from "@/lib/attention";
+import { criteriaOf, problemsOf, staleReview } from "@/lib/attention";
+import { CriterionChip } from "./criterion-chip";
 import { formatHours } from "@/lib/time";
 
 const rtf = new Intl.RelativeTimeFormat("ru", { numeric: "auto" });
@@ -16,8 +17,11 @@ function snippet(text: string, max = 160) {
 
 export function PrCard({ pr }: { pr: PullRequest }) {
   const problems = problemsOf(pr);
-  const waiting = problems.length === 0 ? waitingReason(pr) : null;
-  const accent = problems.length > 0 ? "border-l-red-500" : pr.approvedBy.length > 0 ? "border-l-emerald-500" : "border-l-zinc-300 dark:border-l-zinc-700";
+  const criteria = criteriaOf(pr);
+  const allGreen = criteria.every((c) => c.key === "size" || c.status === "ok" || c.status === "none");
+  const accent =
+    problems.length > 0 ? "border-l-red-500" : allGreen ? "border-l-emerald-500" : "border-l-amber-400";
+  const reviewWaiting = criteria.find((c) => c.key === "review")?.status === "wait";
 
   return (
     <article
@@ -35,6 +39,12 @@ export function PrCard({ pr }: { pr: PullRequest }) {
           {pr.title}
         </a>
       </header>
+
+      <ul className="flex flex-wrap gap-1.5" aria-label="Состояние PR">
+        {criteria.map((c) => (
+          <CriterionChip key={c.key} c={c} />
+        ))}
+      </ul>
 
       {problems.includes("checks") && (
         <Block tone="red" title={`Упали чекеры${pr.checks.failed.length ? ` (${pr.checks.failed.length})` : ""}`}>
@@ -87,14 +97,9 @@ export function PrCard({ pr }: { pr: PullRequest }) {
 
       {problems.includes("stale") && <StaleBlock pr={pr} />}
 
-      {waiting && <p className="text-xs text-zinc-500">⏳ {waiting}</p>}
-
-      <footer className="mt-auto flex flex-wrap gap-x-3 text-xs text-zinc-500">
-        <span>
-          <span className="text-emerald-600">+{pr.additions}</span> <span className="text-red-600">−{pr.deletions}</span>
-        </span>
-        {pr.approvedBy.length > 0 && <span className="text-emerald-600">✓ {pr.approvedBy.join(", ")}</span>}
-      </footer>
+      {reviewWaiting && pr.requestedReviewers.length > 0 && (
+        <p className="text-xs text-zinc-500">Ждём: {pr.requestedReviewers.map((r) => "@" + r).join(", ")}</p>
+      )}
     </article>
   );
 }
